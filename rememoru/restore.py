@@ -156,7 +156,7 @@ class Restorer(object):
             cur = disp_map[sd["uuid"]]
             if cur is None:
                 self.log("  ! display %s not connected — skipping its spaces"
-                         % sd["uuid"][:8])
+                         % (sd["uuid"] or "?")[:8])
                 continue
             need = sum(
                 1 for u in sd["spaces"]
@@ -167,7 +167,7 @@ class Restorer(object):
                 deficits.append((cur, need - have))
                 self.log("  %sdisplay %s: needs %d desktops, has %d"
                          % ("would create on " if self.o.dry_run else "",
-                            cur["uuid"][:8], need, have))
+                            (cur["uuid"] or "?")[:8], need, have))
         if not deficits or self.o.dry_run:
             return
         if not mc.open_mc():
@@ -478,7 +478,8 @@ class Restorer(object):
             ]
             if current[: len(desired)] == desired:
                 continue
-            self.log("  reordering spaces on display %s" % cur["uuid"][:8])
+            self.log("  reordering spaces on display %s"
+                     % (cur["uuid"] or "?")[:8])
             if self.o.dry_run:
                 self.log("    current: %s\n    desired: %s"
                          % (current, desired))
@@ -559,7 +560,7 @@ class Restorer(object):
                 continue
             if self.o.dry_run:
                 self.log("  would focus space %s on display %s"
-                         % (sid, cur["uuid"][:8]))
+                         % (sid, (cur["uuid"] or "?")[:8]))
                 continue
             if self.o.focus_mode == "sls":
                 self._focus_sid(cur["uuid"], sid)
@@ -570,7 +571,7 @@ class Restorer(object):
                     ):
                         self.failed.append(
                             "could not focus space %s on display %s"
-                            % (sid, cur["uuid"][:8])
+                            % (sid, (cur["uuid"] or "?")[:8])
                         )
 
     # ------------------------------------------------------------------ run

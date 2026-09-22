@@ -28,7 +28,6 @@ def _opts(args):
     o.verbose = args.verbose
     o.dry_run = args.dry_run
     o.launch = args.launch
-    o.relaunch = args.relaunch
     fb = args.move_fallback
     o.move_fallback = (
         {"mc", "relaunch"} if fb == "all" else {fb} if fb != "none" else set()
