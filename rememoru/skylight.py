@@ -201,7 +201,7 @@ class Connection(object):
         """Switch a display's active space. Works under SIP, but does not
         trigger the transition animation/repaint on macOS 15+ — pair with
         UI automation (mc.focus_space) for a clean switch."""
-        if not SLSManagedDisplaySetCurrentSpace:
+        if not SLSManagedDisplaySetCurrentSpace or not display_uuid:
             return False
         SLSManagedDisplaySetCurrentSpace(
             self.cid, cf.cfstr(display_uuid), int(space_id)

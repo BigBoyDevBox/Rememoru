@@ -151,6 +151,8 @@ _str_cache = {}
 
 def cfstr(s):
     """Return a cached (never released) CFStringRef for a python str."""
+    if s is None:
+        return None
     ref = _str_cache.get(s)
     if ref is None:
         ref = CFStringCreateWithCString(None, s.encode("utf-8"), kCFStringEncodingUTF8)
@@ -192,7 +194,9 @@ def to_py(ref, depth=0):
     """Convert a CFTypeRef to plain python objects.
 
     Unknown types come back as {"__cfref__": <address>} so callers can still
-    use the pointer (e.g. AXUIElementRef).
+    use the pointer (e.g. AXUIElementRef). NOTE: the pointer is only valid
+    while the containing CF object is alive — callers that CFRelease the
+    container right after conversion get dead pointers here.
     """
     if not ref or depth > 16:
         return None

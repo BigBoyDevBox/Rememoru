@@ -88,10 +88,9 @@ K_AX_VALUE_CGRECT = 3
 
 AX_ERROR_SUCCESS = 0
 
-# Arrays returned by AXUIElementCopyAttributeValue own their elements; if we
-# released them the AXUIElementRefs we hand out could die. Keep them for the
-# lifetime of the process — this is a short-lived CLI, so a small leak is fine.
-_keepalive = []
+# Refs returned by AXUIElementCopy* are owned (Copy rule) but never released:
+# arrays own the AXUIElementRefs we hand out, so releasing parents could kill
+# live elements. Deliberate small leak — this is a short-lived CLI.
 
 
 def trusted():
@@ -125,14 +124,18 @@ def attr_names(el):
     return cf.to_py(_copy_attr(el, "AXAttributeNames")) or []
 
 
+AXUIElementCopyActionNames = _f(
+    "AXUIElementCopyActionNames",
+    ctypes.c_int,
+    [ctypes.c_void_p, ctypes.c_void_p],
+)
+
+
 def action_names(el):
-    out = ctypes.c_void_p()
-    fn = getattr(AX, "AXUIElementCopyActionNames", None)
-    if fn is None:
+    if not AXUIElementCopyActionNames:
         return []
-    fn.restype = ctypes.c_int
-    fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    if fn(el, ctypes.byref(out)) != AX_ERROR_SUCCESS:
+    out = ctypes.c_void_p()
+    if AXUIElementCopyActionNames(el, ctypes.byref(out)) != AX_ERROR_SUCCESS:
         return []
     return cf.to_py(out.value) or []
 

@@ -99,3 +99,19 @@ def bundle_identifier_of(nsrunningapp):
     if not nsrunningapp:
         return None
     return _send_id(nsrunningapp, sel("bundleIdentifier"))
+
+
+def autorelease_pool():
+    """Create an NSAutoreleasePool — needed around calls that return
+    autoreleased objects (NSRunningApplication lookups); without one they
+    leak and spam 'no pool in place' warnings."""
+    cls = get_class("NSAutoreleasePool")
+    if not cls:
+        return None
+    pool = _send_id(cls, sel("alloc"))
+    return _send_id(pool, sel("init")) if pool else None
+
+
+def drain_pool(pool):
+    if pool:
+        _send_id(pool, sel("drain"))

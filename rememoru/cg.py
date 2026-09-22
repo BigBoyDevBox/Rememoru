@@ -176,6 +176,8 @@ KEY_RIGHT = 124
 
 
 def _post(ev):
+    if not ev:
+        return
     CGEventPost(K_CG_HID_EVENT_TAP, ev)
     cf.CFRelease(ev)
 
@@ -184,14 +186,18 @@ def key(keycode, flags=0):
     down = CGEventCreateKeyboardEvent(None, keycode, True)
     up = CGEventCreateKeyboardEvent(None, keycode, False)
     if flags:
-        CGEventSetFlags(down, flags)
-        CGEventSetFlags(up, flags)
+        if down:
+            CGEventSetFlags(down, flags)
+        if up:
+            CGEventSetFlags(up, flags)
     _post(down)
     _post(up)
 
 
 def mouse_pos():
     ev = CGEventCreate(None)
+    if not ev:
+        return None
     p = CGEventGetLocation(ev)
     cf.CFRelease(ev)
     return (p.x, p.y)

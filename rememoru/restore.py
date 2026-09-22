@@ -95,7 +95,13 @@ class Restorer(object):
         return ordinals
 
     def _snap_space(self, uuid):
-        return next((s for s in self.snap["spaces"] if s["uuid"] == uuid), None)
+        if uuid is None:
+            return None
+        return next(
+            (s for s in self.snap["spaces"]
+             if s["uuid"] is not None and s["uuid"] == uuid),
+            None,
+        )
 
     def _snap_space_windows(self, space_uuid):
         return [w for w in self.snap["windows"] if w.get("space_uuid") == space_uuid]
@@ -106,8 +112,6 @@ class Restorer(object):
         pairs = []
         for i, sw in enumerate(self.snap["windows"]):
             for j, lw in enumerate(self.live_windows):
-                if lw.get("_matched"):
-                    continue
                 same_app = (
                     sw.get("bundle_id")
                     and sw["bundle_id"] == lw.get("bundle_id")
@@ -235,12 +239,15 @@ class Restorer(object):
         app = live_win["app"]
         self.log("  relaunching %s onto target space" % app)
         self._focus_sid(disp_uuid, target_sid)
-        subprocess.run(
-            ["osascript", "-e", 'tell application "%s" to quit' % app],
-            capture_output=True, timeout=10,
-        )
-        time.sleep(1.5)
-        subprocess.run(["open", "-a", app], capture_output=True, timeout=10)
+        try:
+            subprocess.run(
+                ["osascript", "-e", 'tell application "%s" to quit' % app],
+                capture_output=True, timeout=10,
+            )
+            time.sleep(1.5)
+            subprocess.run(["open", "-a", app], capture_output=True, timeout=10)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            self.log("  ! relaunch failed: %s" % e)
         time.sleep(2.0)
         self.refresh()
 
@@ -280,9 +287,9 @@ class Restorer(object):
                 continue
             # fallbacks
             moved = False
-            if self.o.move_fallback in ("mc", "all"):
+            if "mc" in self.o.move_fallback:
                 moved = self._drag_move_fallback(lw, sid, disp["frame"])
-            if not moved and self.o.move_fallback in ("relaunch", "all"):
+            if not moved and "relaunch" in self.o.move_fallback:
                 self._relaunch_fallback(lw, sid, disp["uuid"])
                 moved = self.space_of_wid.get(lw["id"]) == sid
             if not moved:
@@ -353,7 +360,11 @@ class Restorer(object):
             wins = self._snap_space_windows(sp["uuid"])
             lw = self.live_for(wins[0]) if wins else None
             if disp is None or lw is None:
-                self.missing.append(wins[0] if wins else {"title": sp["uuid"]})
+                self.failed.append(
+                    "fullscreen space %s: window unavailable (%s)"
+                    % ((sp["uuid"] or "?")[:8],
+                       (wins[0].get("app") if wins else "no windows saved"))
+                )
                 continue
             cur = self._live_space_of(lw)
             if cur and cur["type"] == 4:
@@ -444,6 +455,10 @@ class Restorer(object):
             if cur and cur["type"] == 5:
                 return
             time.sleep(0.3)
+        self.failed.append(
+            "split-view space never materialized for %r + %r"
+            % (lw_left.get("title"), lw_right.get("title"))
+        )
 
     # --------------------------------------------------------------- order
     def phase_order(self, disp_map):
@@ -510,11 +525,11 @@ class Restorer(object):
         """Switch display to space sid. SLS set + hide old; may leave visual
         artifacts on macOS 15+ — MC click is the reliable fallback."""
         old = self.sls_managed_current(display_uuid)
-        self.sls.set_active_space(display_uuid, sid)
-        if old and old != sid:
+        ok = self.sls.set_active_space(display_uuid, sid)
+        if ok and old and old != sid:
             self.sls.hide_spaces([old])
         time.sleep(0.2)
-        return True
+        return ok
 
     def sls_managed_current(self, display_uuid):
         s = next(
@@ -550,9 +565,13 @@ class Restorer(object):
                 self._focus_sid(cur["uuid"], sid)
             else:
                 if sid in self.space_by_id:
-                    mc.focus_space(
+                    if not mc.focus_space(
                         cur["frame"], self.space_by_id[sid]["index"], self.log
-                    )
+                    ):
+                        self.failed.append(
+                            "could not focus space %s on display %s"
+                            % (sid, cur["uuid"][:8])
+                        )
 
     # ------------------------------------------------------------------ run
     def run(self):

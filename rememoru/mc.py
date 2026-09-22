@@ -196,6 +196,11 @@ def reorder_spaces(display_frame, desired_ids, current_ids_fn, log):
             return False
         j = order.index(desired_ids[i])
         buttons = space_buttons(display_frame)
+        if len(buttons) != len(order):
+            # spaces without thumbnails (e.g. Dashboard) shift indices —
+            # drags could hit the wrong thumbnail
+            log("  ! %d thumbnails vs %d spaces — index parity unsure"
+                % (len(buttons), len(order)))
         if i >= len(buttons) or j >= len(buttons):
             return False
         src = ax.center(buttons[j])
@@ -214,12 +219,14 @@ def reorder_spaces(display_frame, desired_ids, current_ids_fn, log):
 def find_window_thumbnail(display_frame, title, spaces_bar_bottom):
     """Find the MC thumbnail element for a window on the shown space."""
     dock = dock_element()
-    if dock is None:
+    if dock is None or not title:
+        # without a title every thumbnail matches — moving a random window
+        # is worse than failing
         return None
 
     def matches(el):
         t = ax.attr(el, "AXTitle") or ax.attr(el, "AXDescription") or ""
-        if title and title not in t:
+        if title not in t:
             return False
         f = ax.frame(el)
         if not f or f["h"] < 20:  # thumbnails are substantial
@@ -290,13 +297,15 @@ def _pick_tile_menu_item(zoom_el, side, log, attempts=6):
         items = ax.menu_items_under(zoom_el)
         for mi in items:
             if (ax.attr(mi, "AXTitle") or "") == wanted_exact:
-                return ax.press(mi)
+                if ax.press(mi):
+                    return True
         for mi in items:
             t = ax.attr(mi, "AXTitle") or ""
             if "Desktop" in t:
                 continue
             if any(c in t for c in contains):
-                return ax.press(mi)
+                if ax.press(mi):
+                    return True
         if not opened_submenu:
             for mi in items:
                 if (ax.attr(mi, "AXTitle") or "") == "Full Screen":
@@ -392,6 +401,7 @@ def split_view(win_el, win_pid, win_title, side,
         log("  ! no tiling item found; releasing")
         cg.mouse_up(*pt)
         return False
+    cg.mouse_up(*pt)  # the tile action was dispatched; release the hold
 
     # window goes fullscreen on its half; then the picker shows the rest
     landed = _wait(lambda: ax.is_fullscreen(win_el), 2.5)

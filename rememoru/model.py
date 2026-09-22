@@ -26,13 +26,17 @@ def _bundle_ids(pids):
     except OSError:
         pass
     out = {}
-    for pid in set(pids):
-        try:
-            app = objcrt.running_app_with_pid(pid)
-            ref = objcrt.bundle_identifier_of(app)
-            out[pid] = cf.cfstring_to_str(ref) if ref else None
-        except Exception:
-            out[pid] = None
+    pool = objcrt.autorelease_pool()
+    try:
+        for pid in set(pids):
+            try:
+                app = objcrt.running_app_with_pid(pid)
+                ref = objcrt.bundle_identifier_of(app)
+                out[pid] = cf.cfstring_to_str(ref) if ref else None
+            except Exception:
+                out[pid] = None
+    finally:
+        objcrt.drain_pool(pool)
     return out
 
 

@@ -29,7 +29,12 @@ def _opts(args):
     o.dry_run = args.dry_run
     o.launch = args.launch
     o.relaunch = args.relaunch
-    o.move_fallback = args.move_fallback
+    fb = args.move_fallback
+    o.move_fallback = (
+        {"mc", "relaunch"} if fb == "all" else {fb} if fb != "none" else set()
+    )
+    if args.relaunch:
+        o.move_fallback.add("relaunch")
     o.fullscreen = not args.no_fullscreen
     o.split = not args.no_split
     o.reorder = not args.no_reorder
