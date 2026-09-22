@@ -5,7 +5,51 @@ Everything here is a plain C API, so it works on a stock macOS python3.
 import ctypes
 
 CF_PATH = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-CF = ctypes.CDLL(CF_PATH)
+_CF = None
+
+
+def _lib():
+    """Load CoreFoundation on first use — keeps the module importable (and
+    --help/doctor usable) off-macOS or on broken installs."""
+    global _CF
+    if _CF is None:
+        _CF = ctypes.CDLL(CF_PATH)
+    return _CF
+
+
+class LazySym(object):
+    """Callable proxy that resolves a native symbol on first call.
+
+    Truthiness reports availability (False when the library or symbol is
+    missing), so `if sym:` / `sym is not None`-style feature checks keep
+    working without loading anything at import time.
+    """
+
+    __slots__ = ("_builder", "_fn", "_done")
+
+    def __init__(self, builder):
+        self._builder = builder
+        self._fn = None
+        self._done = False
+
+    def resolve(self):
+        if not self._done:
+            self._done = True
+            try:
+                self._fn = self._builder()
+            except (OSError, AttributeError):
+                self._fn = None
+        return self._fn
+
+    def __call__(self, *args):
+        fn = self.resolve()
+        if fn is None:
+            raise RuntimeError("native symbol unavailable (not macOS?)")
+        return fn(*args)
+
+    def __bool__(self):
+        return self.resolve() is not None
+
 
 CFIndex = ctypes.c_long
 CFTypeID = ctypes.c_ulong
@@ -24,10 +68,13 @@ _KCFNUM_FLOAT64 = 6
 
 
 def _f(name, restype, argtypes):
-    fn = getattr(CF, name)
-    fn.restype = restype
-    fn.argtypes = argtypes
-    return fn
+    def build():
+        fn = getattr(_lib(), name)
+        fn.restype = restype
+        fn.argtypes = argtypes
+        return fn
+
+    return LazySym(build)
 
 
 CFGetTypeID = _f("CFGetTypeID", CFTypeID, [ctypes.c_void_p])
@@ -91,8 +138,13 @@ CFUUIDCreateString = _f(
     "CFUUIDCreateString", ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_void_p]
 )
 
-kCFBooleanTrue = ctypes.c_void_p.in_dll(CF, "kCFBooleanTrue")
-kCFBooleanFalse = ctypes.c_void_p.in_dll(CF, "kCFBooleanFalse")
+def __getattr__(name):
+    # kCFBooleanTrue / kCFBooleanFalse — resolved lazily via in_dll
+    if name in ("kCFBooleanTrue", "kCFBooleanFalse"):
+        v = ctypes.c_void_p.in_dll(_lib(), name)
+        globals()[name] = v
+        return v
+    raise AttributeError(name)
 
 _str_cache = {}
 

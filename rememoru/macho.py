@@ -7,23 +7,38 @@ Hammerspoon PR #3889.
 import ctypes
 import struct
 
-_libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+from . import cf
 
-_dyld_image_count = _libc._dyld_image_count
-_dyld_image_count.restype = ctypes.c_uint32
-_dyld_image_count.argtypes = []
+_libc = None
 
-_dyld_get_image_name = _libc._dyld_get_image_name
-_dyld_get_image_name.restype = ctypes.c_char_p
-_dyld_get_image_name.argtypes = [ctypes.c_uint32]
 
-_dyld_get_image_vmaddr_slide = _libc._dyld_get_image_vmaddr_slide
-_dyld_get_image_vmaddr_slide.restype = ctypes.c_long
-_dyld_get_image_vmaddr_slide.argtypes = [ctypes.c_uint32]
+def _lib():
+    global _libc
+    if _libc is None:
+        _libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    return _libc
 
-_dyld_get_image_header = _libc._dyld_get_image_header
-_dyld_get_image_header.restype = ctypes.c_void_p
-_dyld_get_image_header.argtypes = [ctypes.c_uint32]
+
+def _f(name, restype, argtypes):
+    def build():
+        fn = getattr(_lib(), name)
+        fn.restype = restype
+        fn.argtypes = argtypes
+        return fn
+
+    return cf.LazySym(build)
+
+
+_dyld_image_count = _f("_dyld_image_count", ctypes.c_uint32, [])
+_dyld_get_image_name = _f(
+    "_dyld_get_image_name", ctypes.c_char_p, [ctypes.c_uint32]
+)
+_dyld_get_image_vmaddr_slide = _f(
+    "_dyld_get_image_vmaddr_slide", ctypes.c_long, [ctypes.c_uint32]
+)
+_dyld_get_image_header = _f(
+    "_dyld_get_image_header", ctypes.c_void_p, [ctypes.c_uint32]
+)
 
 MH_MAGIC_64 = 0xFEEDFACF
 LC_SEGMENT_64 = 0x19

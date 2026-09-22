@@ -557,10 +557,15 @@ class Restorer(object):
     # ------------------------------------------------------------------ run
     def run(self):
         if not ax.trusted():
-            self.log("ERROR: Accessibility permission required.")
-            self.log("  System Settings → Privacy & Security → Accessibility")
-            self.log("  → enable your terminal / python3.")
-            return 2
+            if self.o.dry_run:
+                self.log("note: Accessibility not granted — dry-run only,"
+                         " no changes will be made anyway.")
+            else:
+                self.log("ERROR: Accessibility permission required.")
+                self.log("  System Settings → Privacy & Security"
+                         " → Accessibility")
+                self.log("  → enable your terminal / python3.")
+                return 2
 
         disp_map = self._disp_map()
 

@@ -10,24 +10,33 @@ _AX_CANDIDATES = [
     "/System/Library/Frameworks/ApplicationServices.framework/Frameworks/"
     "HIServices.framework/HIServices",
 ]
-AX = None
-for _p in _AX_CANDIDATES:
-    try:
-        _lib = ctypes.CDLL(_p)
-        getattr(_lib, "AXUIElementCreateApplication")
-        AX = _lib
-        break
-    except (OSError, AttributeError):
-        continue
-if AX is None:
-    AX = ctypes.CDLL(_AX_CANDIDATES[0])  # let it raise on use
+_AX = None
+
+
+def _lib():
+    global _AX
+    if _AX is None:
+        for p in _AX_CANDIDATES:
+            try:
+                lib = ctypes.CDLL(p)
+                getattr(lib, "AXUIElementCreateApplication")
+                _AX = lib
+                break
+            except (OSError, AttributeError):
+                continue
+        if _AX is None:
+            _AX = ctypes.CDLL(_AX_CANDIDATES[0])  # let it raise on use
+    return _AX
 
 
 def _f(name, restype, argtypes):
-    fn = getattr(AX, name)
-    fn.restype = restype
-    fn.argtypes = argtypes
-    return fn
+    def build():
+        fn = getattr(_lib(), name)
+        fn.restype = restype
+        fn.argtypes = argtypes
+        return fn
+
+    return cf.LazySym(build)
 
 
 AXIsProcessTrusted = _f("AXIsProcessTrusted", ctypes.c_bool, [])
@@ -86,7 +95,7 @@ _keepalive = []
 
 
 def trusted():
-    return bool(AXIsProcessTrusted())
+    return bool(AXIsProcessTrusted) and bool(AXIsProcessTrusted())
 
 
 def _copy_attr(el, name):

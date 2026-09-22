@@ -2,17 +2,42 @@
 and NSRunningApplication lookups)."""
 import ctypes
 
-objc = ctypes.CDLL("/usr/lib/libobjc.A.dylib")
+from . import cf
 
-objc_getClass = objc.objc_getClass
-objc_getClass.restype = ctypes.c_void_p
-objc_getClass.argtypes = [ctypes.c_char_p]
+_objc = None
 
-sel_registerName = objc.sel_registerName
-sel_registerName.restype = ctypes.c_void_p
-sel_registerName.argtypes = [ctypes.c_char_p]
 
-_msgsend_addr = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+def _lib():
+    global _objc
+    if _objc is None:
+        _objc = ctypes.CDLL("/usr/lib/libobjc.A.dylib")
+    return _objc
+
+
+def _f(name, restype, argtypes):
+    def build():
+        fn = getattr(_lib(), name)
+        fn.restype = restype
+        fn.argtypes = argtypes
+        return fn
+
+    return cf.LazySym(build)
+
+
+objc_getClass = _f("objc_getClass", ctypes.c_void_p, [ctypes.c_char_p])
+sel_registerName = _f("sel_registerName", ctypes.c_void_p, [ctypes.c_char_p])
+
+_msgsend_addr = None
+
+
+def _msgsend():
+    global _msgsend_addr
+    if _msgsend_addr is None:
+        _msgsend_addr = ctypes.cast(
+            _lib().objc_msgSend, ctypes.c_void_p
+        ).value
+    return _msgsend_addr
+
 
 _sel_cache = {}
 
@@ -30,9 +55,12 @@ def get_class(name):
 
 
 def make_caller(restype, *argtypes):
-    return ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)(
-        _msgsend_addr
-    )
+    def build():
+        return ctypes.CFUNCTYPE(
+            restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes
+        )(_msgsend())
+
+    return cf.LazySym(build)
 
 
 # Pre-built signatures we need

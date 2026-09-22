@@ -11,7 +11,14 @@ import ctypes
 from . import cf, macho, objcrt
 
 SL_PATH = "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight"
-SL = ctypes.CDLL(SL_PATH)
+_SL = None
+
+
+def _lib():
+    global _SL
+    if _SL is None:
+        _SL = ctypes.CDLL(SL_PATH)
+    return _SL
 
 # mangled name of the non-exported symbol (from Hammerspoon PR #3889)
 _BRIDGED_PERFORM_MANGLED = (
@@ -22,13 +29,16 @@ _BRIDGED_OP_CLASS = "SLSBridgedMoveWindowsToManagedSpaceOperation"
 
 
 def _bind(names, restype, argtypes):
-    for n in names:
-        fn = getattr(SL, n, None)
-        if fn is not None:
-            fn.restype = restype
-            fn.argtypes = argtypes
-            return fn
-    return None
+    def build():
+        for n in names:
+            fn = getattr(_lib(), n, None)
+            if fn is not None:
+                fn.restype = restype
+                fn.argtypes = argtypes
+                return fn
+        return None
+
+    return cf.LazySym(build)
 
 
 SLSMainConnectionID = _bind(
@@ -83,17 +93,25 @@ def _resolve_bridge():
     if _bridge_checked:
         return _bridge_perform
     _bridge_checked = True
-    addr = macho.find_local_symbol("SkyLight", _BRIDGED_PERFORM_MANGLED)
+    try:
+        addr = macho.find_local_symbol("SkyLight", _BRIDGED_PERFORM_MANGLED)
+    except (OSError, RuntimeError):
+        addr = None
     if addr is None:
         # some builds may export it after all, or with one less underscore
-        for cand in (
-            "SLSPerformAsynchronousBridgedWindowManagementOperation",
-            "_SLSPerformAsynchronousBridgedWindowManagementOperation",
-        ):
-            fn = getattr(SL, cand, None)
-            if fn is not None:
-                addr = ctypes.cast(fn, ctypes.c_void_p).value
-                break
+        try:
+            lib = _lib()
+        except OSError:
+            lib = None
+        if lib is not None:
+            for cand in (
+                "SLSPerformAsynchronousBridgedWindowManagementOperation",
+                "_SLSPerformAsynchronousBridgedWindowManagementOperation",
+            ):
+                fn = getattr(lib, cand, None)
+                if fn is not None:
+                    addr = ctypes.cast(fn, ctypes.c_void_p).value
+                    break
     if addr:
         _bridge_perform = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_void_p)(addr)
     return _bridge_perform
@@ -110,7 +128,7 @@ def bridged_move_available():
 
 class Connection(object):
     def __init__(self):
-        if SLSMainConnectionID is None:
+        if not SLSMainConnectionID:
             raise RuntimeError("SLSMainConnectionID not found")
         self.cid = SLSMainConnectionID()
 
@@ -126,7 +144,7 @@ class Connection(object):
             cf.CFRelease(arr)
 
     def space_type(self, space_id):
-        if SLSSpaceGetType is None:
+        if not SLSSpaceGetType:
             return None
         return SLSSpaceGetType(self.cid, int(space_id))
 
@@ -162,7 +180,7 @@ class Connection(object):
 
     def spaces_for_windows(self, window_ids):
         """Parallel list of space ids for the given CG window numbers."""
-        if SLSCopySpacesForWindows is None or not window_ids:
+        if not SLSCopySpacesForWindows or not window_ids:
             return [None] * len(window_ids)
         warr = cf.cfarray_of_ints(window_ids)
         res = SLSCopySpacesForWindows(self.cid, K_CGS_ALL_SPACES_MASK, warr)
@@ -183,7 +201,7 @@ class Connection(object):
         """Switch a display's active space. Works under SIP, but does not
         trigger the transition animation/repaint on macOS 15+ — pair with
         UI automation (mc.focus_space) for a clean switch."""
-        if SLSManagedDisplaySetCurrentSpace is None:
+        if not SLSManagedDisplaySetCurrentSpace:
             return False
         SLSManagedDisplaySetCurrentSpace(
             self.cid, cf.cfstr(display_uuid), int(space_id)
@@ -191,7 +209,7 @@ class Connection(object):
         return True
 
     def hide_spaces(self, space_ids):
-        if SLSHideSpaces is None:
+        if not SLSHideSpaces:
             return False
         arr = cf.cfarray_of_ints(space_ids)
         SLSHideSpaces(self.cid, arr)
@@ -222,16 +240,18 @@ class Connection(object):
 def available_symbols():
     """For `doctor`: which bindings resolved."""
     return {
-        "SLSMainConnectionID": SLSMainConnectionID is not None,
-        "SLSCopyManagedDisplaySpaces": SLSCopyManagedDisplaySpaces is not None,
-        "SLSSpaceGetType": SLSSpaceGetType is not None,
-        "SLSGetActiveSpace": SLSGetActiveSpace is not None,
-        "SLSManagedDisplayGetCurrentSpace": SLSManagedDisplayGetCurrentSpace
-        is not None,
-        "SLSManagedDisplaySetCurrentSpace": SLSManagedDisplaySetCurrentSpace
-        is not None,
-        "SLSCopySpacesForWindows": SLSCopySpacesForWindows is not None,
-        "SLSShowSpaces": SLSShowSpaces is not None,
-        "SLSHideSpaces": SLSHideSpaces is not None,
+        "SLSMainConnectionID": bool(SLSMainConnectionID),
+        "SLSCopyManagedDisplaySpaces": bool(SLSCopyManagedDisplaySpaces),
+        "SLSSpaceGetType": bool(SLSSpaceGetType),
+        "SLSGetActiveSpace": bool(SLSGetActiveSpace),
+        "SLSManagedDisplayGetCurrentSpace": bool(
+            SLSManagedDisplayGetCurrentSpace
+        ),
+        "SLSManagedDisplaySetCurrentSpace": bool(
+            SLSManagedDisplaySetCurrentSpace
+        ),
+        "SLSCopySpacesForWindows": bool(SLSCopySpacesForWindows),
+        "SLSShowSpaces": bool(SLSShowSpaces),
+        "SLSHideSpaces": bool(SLSHideSpaces),
         "bridged_move_operation": bridged_move_available(),
     }

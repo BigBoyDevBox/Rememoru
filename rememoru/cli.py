@@ -43,6 +43,12 @@ def cmd_doctor(_args):
     print("platform:      %s" % platform.platform())
     print("macOS:         %s" % (platform.mac_ver()[0] or "?"))
     print("python:        %s" % sys.version.split()[0])
+    if sys.platform != "darwin":
+        print("\nThis tool only runs on macOS — native APIs unavailable here.")
+        print("\nSkyLight bindings:")
+        for name, ok in skylight.available_symbols().items():
+            print("  %-36s %s" % (name, "ok" if ok else "MISSING"))
+        return 1
     try:
         sip = subprocess.run(
             ["csrutil", "status"], capture_output=True, text=True
@@ -236,6 +242,9 @@ def main(argv=None):
     pi.add_argument("--depth", type=int, default=14)
 
     args = p.parse_args(argv)
+    if args.cmd != "doctor" and sys.platform != "darwin":
+        print("rememoru only runs on macOS (this is %s)." % sys.platform)
+        return 1
     return {
         "doctor": cmd_doctor,
         "list": cmd_list,

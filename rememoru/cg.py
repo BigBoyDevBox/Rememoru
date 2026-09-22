@@ -5,7 +5,14 @@ import time
 from . import cf
 
 CG_PATH = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-CG = ctypes.CDLL(CG_PATH)
+_CG = None
+
+
+def _lib():
+    global _CG
+    if _CG is None:
+        _CG = ctypes.CDLL(CG_PATH)
+    return _CG
 
 
 class CGPoint(ctypes.Structure):
@@ -29,14 +36,15 @@ class CGRect(ctypes.Structure):
 
 
 def _f(name, restype, argtypes, required=True):
-    fn = getattr(CG, name, None)
-    if fn is None:
-        if required:
-            raise AttributeError("CoreGraphics missing %s" % name)
-        return None
-    fn.restype = restype
-    fn.argtypes = argtypes
-    return fn
+    def build():
+        fn = getattr(_lib(), name, None)
+        if fn is None:
+            return None
+        fn.restype = restype
+        fn.argtypes = argtypes
+        return fn
+
+    return cf.LazySym(build)
 
 
 # --- window list -----------------------------------------------------------
@@ -77,7 +85,6 @@ CGDisplayCreateUUIDFromDisplayID = _f(
     "CGDisplayCreateUUIDFromDisplayID",
     ctypes.c_void_p,
     [ctypes.c_uint32],
-    required=False,
 )
 
 
@@ -115,15 +122,15 @@ def displays():
 
 # --- screen recording permission ------------------------------------------
 CGPreflightScreenCaptureAccess = _f(
-    "CGPreflightScreenCaptureAccess", ctypes.c_bool, [], required=False
+    "CGPreflightScreenCaptureAccess", ctypes.c_bool, []
 )
 CGRequestScreenCaptureAccess = _f(
-    "CGRequestScreenCaptureAccess", ctypes.c_bool, [ctypes.c_bool], required=False
+    "CGRequestScreenCaptureAccess", ctypes.c_bool, [ctypes.c_bool]
 )
 
 
 def has_screen_recording():
-    if CGPreflightScreenCaptureAccess is None:
+    if not CGPreflightScreenCaptureAccess:
         return None  # pre-10.15, always had titles
     return bool(CGPreflightScreenCaptureAccess())
 
